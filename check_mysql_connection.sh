@@ -35,7 +35,7 @@ fi
 
 counter=0
 isconnected=0
-while [ $counter -lt 10 ]
+while [ $counter -lt 20 ]
 do
 
     DBSTATUS=$(mysql -h $MYSQL_HOST -P $MYSQL_PORT -u$MYSQL_USER -p$MYSQL_PASSWORD -e "SHOW DATABASES;" 2>&1 )
@@ -51,7 +51,7 @@ do
     #     echo "Connection error"
     # fi
 
-    sleep 10
+    sleep 5
 
     counter=`expr $counter + 1`
 done
