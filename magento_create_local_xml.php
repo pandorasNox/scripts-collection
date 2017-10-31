@@ -90,7 +90,7 @@ $trimmedPath   = rtrim($argv[$pathArg + 1], DIRECTORY_SEPARATOR);
 $directoryPath = __DIR__ . $trimmedPath;
 #$directoryPath = __DIR__ . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'etc';
 $templatePath  = $directoryPath . DIRECTORY_SEPARATOR . 'local.xml.template';
-$finalPath     = $directoryPath . DIRECTORY_SEPARATOR . 'local.dev.xml';
+$finalPath     = $directoryPath . DIRECTORY_SEPARATOR . 'local.xml';
 
 try {
     $xml = file_get_contents( $templatePath );
