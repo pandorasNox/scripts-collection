@@ -1,5 +1,17 @@
 <?php
 
+$pathArg = array_search("--path", $argv);
+
+if (false === $pathArg) {
+    fwrite(STDERR, "An error occurred. No path provided. Please add a (relative) path with '--path ./../path/to/magento/app/etc/'." . PHP_EOL);
+    exit(1); // A response code other than 0 is a failure
+}
+
+if (false === isset($argv[$pathArg + 1])) {
+    fwrite(STDERR, "An error occurred. No path provided after '--path'. Please add a (relative) path with '--path ./../path/to/magento/app/etc/'." . PHP_EOL);
+    exit(1); // A response code other than 0 is a failure
+}
+
 $changes = array (
   array (
     'xpath'   => '/config/global/resources/default_setup/connection',
@@ -74,11 +86,24 @@ $changes = array (
   ),
 );
 
-$directoryPath = __DIR__ . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'etc';
+$trimmedPath   = rtrim($argv[$pathArg + 1], DIRECTORY_SEPARATOR);
+$directoryPath = $trimmedPath;
+#$directoryPath = __DIR__ . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'etc';
 $templatePath  = $directoryPath . DIRECTORY_SEPARATOR . 'local.xml.template';
 $finalPath     = $directoryPath . DIRECTORY_SEPARATOR . 'local.dev.xml';
 
-$xml = file_get_contents( $templatePath );
+try {
+    $xml = file_get_contents( $templatePath );
+
+    if (false === $xml) {
+        fwrite(STDERR, "An error occurred." . PHP_EOL);
+        exit(1); // A response code other than 0 is a failure
+    }
+} catch (Exception $e) {
+    // Handle exception
+    fwrite(STDERR, $e->getMessage() . PHP_EOL);
+    exit(1); // A response code other than 0 is a failure
+}
 
 $dom = new DomDocument;
 $dom->loadXML( $xml );
@@ -109,4 +134,15 @@ foreach ( $changes as $config ) {
 
 $string = $dom->saveXML();
 
-file_put_contents( $finalPath, $string );
+try {
+    $success = file_put_contents( $finalPath, $string );
+
+    if (false === $success) {
+        fwrite(STDERR, "An error occurred." . PHP_EOL);
+        exit(1); // A response code other than 0 is a failure
+    }
+} catch (Exception $e) {
+    // Handle exception
+    fwrite(STDERR, $e->getMessage() . PHP_EOL);
+    exit(1); // A response code other than 0 is a failure
+}
