@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # wrapper for the 'timeout' cmd which adds output for the failure case
 # preserves original SIG handling
@@ -11,7 +11,8 @@
 timeout_int=$1; shift
 cmd_and_args=$@;
 
-timeout -t $timeout_int $cmd_and_args;
+# for "ash" (e.g. alpine) the -t flag is needed e.g. `timeout -t 3 sleep 2`
+timeout $timeout_int $cmd_and_args;
 
 TIMEOUT_EXIT_CODE=$?
 
