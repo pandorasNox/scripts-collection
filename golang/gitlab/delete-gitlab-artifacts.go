@@ -4,6 +4,27 @@
 //  - api access
 //  - maintainer role
 
+// usage e.g. in gitlab
+//
+// delete-artifacts:
+//   image: golang:1.20.1-alpine3.17
+//   stage: some-stage
+//   interruptible: true
+//   timeout: 15m
+//   script:
+//     - set -e
+//     - test ${GITLAB_PROJECT_ACCESS_TOKEN} # should be set/provided in gitlab project settings
+//     - go run cicd/scripts/delete-gitlab-artifacts.go
+//       --dry-run=false
+//       --server=${CI_SERVER_URL}
+//       --token=${GITLAB_PROJECT_ACCESS_TOKEN}
+//       --project-id=${CI_PROJECT_ID}
+//       --per-page=1000
+//       --pages=100
+//       --dont-delete-younger-than=$((30*24))h
+//       --dont-delete-older-than=$((12*30*24))h
+
+
 package main
 
 import (
