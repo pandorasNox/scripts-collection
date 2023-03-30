@@ -15,7 +15,7 @@ if set +o | grep -q -F 'set +o posix'; then
   set -o posix
 fi
 
-function func_command_exist() {
+func_command_exist() {
     FUNC_ARG_CMD=${1:?}
 
     if ! command -v ${FUNC_ARG_CMD} &> /dev/null; then
@@ -25,11 +25,11 @@ function func_command_exist() {
     return 0
 }
 
-function func_arch() {
-    ARCH_CMD_PATHS_TO_CHECK=("/usr/bin/arch" "/bin/arch" "arch")
+func_arch() {
+    ARCH_CMD_PATHS_TO_CHECK="/usr/bin/arch /bin/arch arch"
 
     ARCH_CMD=""
-    for ARCH_CMD_PATH_TO_CHECK in "${ARCH_CMD_PATHS_TO_CHECK[@]}"
+    for ARCH_CMD_PATH_TO_CHECK in ${ARCH_CMD_PATHS_TO_CHECK}
     do
         if func_command_exist "${ARCH_CMD_PATH_TO_CHECK}"; then
             ARCH_CMD="${ARCH_CMD_PATH_TO_CHECK}"
