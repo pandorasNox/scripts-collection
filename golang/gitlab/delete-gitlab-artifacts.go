@@ -16,14 +16,14 @@
 //     - test ${GITLAB_PROJECT_ACCESS_TOKEN} # should be set/provided in gitlab project settings
 //     - go run cicd/scripts/delete-gitlab-artifacts.go
 //       --dry-run=false
+//       --skip-tag-pipeline-jobs=true
 //       --server=${CI_SERVER_URL}
 //       --token=${GITLAB_PROJECT_ACCESS_TOKEN}
 //       --project-id=${CI_PROJECT_ID}
-//       --per-page=1000
+//       --per-page=100
 //       --pages=100
 //       --dont-delete-younger-than=$((30*24))h
 //       --dont-delete-older-than=$((12*30*24))h
-
 
 package main
 
@@ -37,15 +37,43 @@ import (
 )
 
 type Job struct {
-	ID                int       `json:"id"`
-	Name              string    `json:"name"`
-	Status            string    `json:"status"`
-	FinishedAt        time.Time `json:"finished_at"`
-	ArtifactsExpireAt time.Time `json:"artifacts_expire_at"`
+	ID                int        `json:"id"`
+	Name              string     `json:"name"`
+	Status            string     `json:"status"`
+	FinishedAt        time.Time  `json:"finished_at"`
+	ArtifactsExpireAt time.Time  `json:"artifacts_expire_at"`
+	Artifacts         []Artifact `json:"artifacts"`
+	Pipeline          Pipeline   `json:"pipeline"`
 }
+
+type Artifact struct {
+	FileType   string `json:"file_type"`
+	Size       uint64 `json:"size"`
+	Filename   string `json:"filename"`
+	FileFormat string `json:"file_format"`
+}
+
+type Pipeline struct {
+	ID int `json:"id"`
+	// "project_id": 1,
+	Ref string `json:"ref"`
+	// "sha": "0ff3ae198f8601a285adcf5c0fff204ee6fba5fd",
+	// "status": "pending"
+}
+
+// https://docs.gitlab.com/ee/api/tags.html
+type Tag struct {
+	Name string `json:"name"`
+}
+
+// todo:
+// * https://docs.gitlab.com/ee/api/rest/#offset-based-pagination VS https://docs.gitlab.com/ee/api/rest/#keyset-based-pagination
+// * add `&sort=asc` / `&sort=desc` see: https://docs.gitlab.com/ee/api/rest/#keyset-based-pagination
+// * use `x-total-pages` to get + use it to figure out how many pages should be used if given a date (recursive)
 
 func main() {
 	var dryRun bool
+	var skipTagPipelineJobs bool
 	var project_id int
 	var per_page int
 	var pages int
@@ -56,6 +84,7 @@ func main() {
 	var dontDeleteOlderThan time.Duration
 
 	flag.BoolVar(&dryRun, "dry-run", true, "Enable dry-run (execution without any deletions)")
+	flag.BoolVar(&skipTagPipelineJobs, "skip-tag-pipeline-jobs", true, "Skip artifact deletion for jobs of pipelines which were triggered by tag")
 	flag.IntVar(&project_id, "project-id", 0, "Project ID")
 	flag.IntVar(&per_page, "per-page", 100, "Number of jobs per page")
 	flag.IntVar(&pages, "pages", 1, "Number of pages")
@@ -74,6 +103,13 @@ func main() {
 	}
 
 	fmt.Printf("Fetching %d pages from %v\n", pages, server)
+
+	tags, err := collectProjectTags(project_id, server, token)
+	if err != nil {
+		log.Fatalf("couldn't collect tags: %s", err)
+	}
+
+	fmt.Printf("tags found: %v \n", tags)
 
 Loop:
 	for i := startPage; i <= pages; i++ {
@@ -99,6 +135,11 @@ Loop:
 			return
 		}
 
+		if len(jobs) == 0 {
+			fmt.Printf("  stop execution as no jobs are found on page %d\n", i)
+			break Loop
+		}
+
 		for _, job := range jobs {
 			// fmt.Println("job to process:", job.ID)
 
@@ -106,9 +147,14 @@ Loop:
 				continue
 			}
 
+			if skipTagPipelineJobs && tagListContains(tags, job.Pipeline.Ref) {
+				fmt.Printf("  skipped (skipTagPipelineJobs=true): id=%d status='%s' name='%s' job.Pipeline.Ref='%s'\n", job.ID, job.Status, job.Name, job.Pipeline.Ref)
+				continue
+			}
+
 			// job is younger than dontDeleteYoungerThan but also has expired job artifact
 			if job.FinishedAt.After(time.Now().Add(-1*dontDeleteYoungerThan)) && job.ArtifactsExpireAt.Before(time.Now()) {
-				_, _ = deleteJobArtifacts(server, token, project_id, job.ID)
+				_, _ = deleteJobArtifacts(job, server, token, project_id)
 				fmt.Println("  attemted deletion (artifacts already expired, ignored if failed bec. nice to have) for job: ", job.ID)
 				continue
 			}
@@ -130,18 +176,18 @@ Loop:
 				continue
 			}
 
-			respStatus, err := deleteJobArtifacts(server, token, project_id, job.ID)
+			respStatus, err := deleteJobArtifacts(job, server, token, project_id)
 			if err != nil {
-				log.Fatalf("failed deleting job(id: %s) artifacts: %s", job.ID, err)
+				log.Fatalf("failed deleting job(id: %d) artifacts: %s", job.ID, err)
 			}
 
-			fmt.Printf("job artifacts deleted: %d | response Status: %s \n", job.ID, respStatus)
+			fmt.Printf("  job artifacts deleted: %d | response Status: %s \n", job.ID, respStatus)
 		}
 	}
 }
 
-func deleteJobArtifacts(server string, token string, projectId int, jobId int) (string, error) {
-	url := fmt.Sprintf("%s/api/v4/projects/%d/jobs/%d/artifacts", server, projectId, jobId)
+func deleteJobArtifacts(job Job, server string, token string, projectId int) (string, error) {
+	url := fmt.Sprintf("%s/api/v4/projects/%d/jobs/%d/artifacts", server, projectId, job.ID)
 
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
@@ -149,6 +195,11 @@ func deleteJobArtifacts(server string, token string, projectId int, jobId int) (
 	}
 
 	req.Header.Set("PRIVATE-TOKEN", token)
+
+	//artifact.FileType == "archive"
+	for _, artifact := range job.Artifacts {
+		fmt.Printf("      artifact.name: %s \n", artifact.Filename)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -161,4 +212,50 @@ func deleteJobArtifacts(server string, token string, projectId int, jobId int) (
 	}
 
 	return resp.Status, nil
+}
+
+func collectProjectTags(project_id int, server, token string) ([]Tag, error) {
+	startPage := 0
+	perPage := 1000
+	maxPages := 100
+
+	allTags := []Tag{}
+
+	for i := startPage; i <= maxPages; i++ {
+		url := fmt.Sprintf("%v/api/v4/projects/%v/repository/tags?per_page=%d&page=%d", server, project_id, perPage, i)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return []Tag{}, fmt.Errorf("failed building GET http request: %s", err)
+		}
+		req.Header.Set("PRIVATE-TOKEN", token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return []Tag{}, fmt.Errorf("failed doing GET http request: %s", err)
+		}
+		defer resp.Body.Close()
+
+		var tags []Tag
+		err = json.NewDecoder(resp.Body).Decode(&tags)
+		if err != nil {
+			return []Tag{}, fmt.Errorf("failed decoding tags from response: %s", err)
+		}
+
+		if len(tags) == 0 {
+			break
+		}
+
+		allTags = append(allTags, tags...)
+	}
+
+	return allTags, nil
+}
+
+func tagListContains(tags []Tag, name string) bool {
+	for _, tag := range tags {
+		if tag.Name == name {
+			return true
+		}
+	}
+
+	return false
 }
